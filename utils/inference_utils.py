@@ -177,8 +177,13 @@ def split_coeff(coeffs):
             'trans': translations
         }
 
-def Laplacian_Pyramid_Blending_with_mask(A, B, m, num_levels = 6):
-    # generate Gaussian pyramid for A,B and mask
+def Laplacian_Pyramid_Blending_with_mask(A, B, m, num_levels=6):
+    # Ensure A, B, and m are the same size
+    if A.shape != B.shape or A.shape != m.shape:
+        B = cv2.resize(B, (A.shape[1], A.shape[0]))
+        m = cv2.resize(m, (A.shape[1], A.shape[0]))
+
+    # Generate Gaussian pyramid for A, B and mask
     GA = A.copy()
     GB = B.copy()
     GM = m.copy()
@@ -193,31 +198,31 @@ def Laplacian_Pyramid_Blending_with_mask(A, B, m, num_levels = 6):
         gpB.append(np.float32(GB))
         gpM.append(np.float32(GM))
 
-    # generate Laplacian Pyramids for A,B and masks
-    lpA  = [gpA[num_levels-1]] # the bottom of the Lap-pyr holds the last (smallest) Gauss level
-    lpB  = [gpB[num_levels-1]]
+    # Generate Laplacian Pyramids for A, B and masks
+    lpA = [gpA[num_levels-1]]
+    lpB = [gpB[num_levels-1]]
     gpMr = [gpM[num_levels-1]]
-    for i in range(num_levels-1,0,-1):
-        # Laplacian: subtract upscaled version of lower level from current level
-        # to get the high frequencies
-        LA = np.subtract(gpA[i-1], cv2.pyrUp(gpA[i]))
-        LB = np.subtract(gpB[i-1], cv2.pyrUp(gpB[i]))
+    for i in range(num_levels-1, 0, -1):
+        size = (gpA[i-1].shape[1], gpA[i-1].shape[0])
+        LA = np.subtract(gpA[i-1], cv2.pyrUp(gpA[i], dstsize=size))
+        LB = np.subtract(gpB[i-1], cv2.pyrUp(gpB[i], dstsize=size))
         lpA.append(LA)
         lpB.append(LB)
-        gpMr.append(gpM[i-1]) # also reverse the masks
+        gpMr.append(gpM[i-1])
 
-    # Now blend images according to mask in each level
+    # Blend images according to mask in each level
     LS = []
-    for la,lb,gm in zip(lpA,lpB,gpMr):
-        gm = gm[:,:,np.newaxis]
+    for la, lb, gm in zip(lpA, lpB, gpMr):
+        gm = gm if len(gm.shape) == 3 else gm[:, :, np.newaxis]
         ls = la * gm + lb * (1.0 - gm)
         LS.append(ls)
 
-    # now reconstruct
+    # Reconstruct
     ls_ = LS[0]
-    for i in range(1,num_levels):
-        ls_ = cv2.pyrUp(ls_)
-        ls_ = cv2.add(ls_, LS[i])
+    for i in range(1, num_levels):
+        size = (LS[i].shape[1], LS[i].shape[0])
+        ls_ = cv2.add(cv2.pyrUp(ls_, dstsize=size), LS[i])
+
     return ls_
 
 def load_model(args, device):

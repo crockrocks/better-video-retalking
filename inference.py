@@ -3,6 +3,7 @@ import cv2, os, sys, subprocess, platform, torch
 from tqdm import tqdm
 from PIL import Image
 from scipy.io import loadmat
+import cv2
 
 sys.path.insert(0, 'third_part')
 sys.path.insert(0, 'third_part/GPEN')
@@ -220,6 +221,7 @@ def main():
             incomplete, reference = torch.split(img_batch, 3, dim=1) 
             pred, low_res = model(mel_batch, img_batch, reference)
             pred = torch.clamp(pred, 0, 1)
+            pred = torch.nn.functional.interpolate(pred, size=(512, 512), mode='bilinear', align_corners=False) #increasing the resolution
 
             if args.up_face in ['sad', 'angry', 'surprise']:
                 tar_aus = exp_aus_dict[args.up_face]
@@ -256,13 +258,17 @@ def main():
                 # 0,   1,   2,   3,   4,   5,   6,   7,   8,  9, 10,  11,  12,
             mm = [0,   0,   0,   0,   0,   0,   0,   0,   0,  0, 255, 255, 255, 0, 0, 0, 0, 0, 0]
             mouse_mask = np.zeros_like(restored_img)
-            tmp_mask = enhancer.faceparser.process(restored_img[y1:y2, x1:x2], mm)[0]
+            tmp_mask = enhancer.faceparser.process(cv2.resize(restored_img[y1:y2, x1:x2],(512,512)), mm)[0] #added cv2.resize to 512-512
             mouse_mask[y1:y2, x1:x2]= cv2.resize(tmp_mask, (x2 - x1, y2 - y1))[:, :, np.newaxis] / 255.
 
             height, width = ff.shape[:2]
             restored_img, ff, full_mask = [cv2.resize(x, (512, 512)) for x in (restored_img, ff, np.float32(mouse_mask))]
-            img = Laplacian_Pyramid_Blending_with_mask(restored_img, ff, full_mask[:, :, 0], 10)
+            img = Laplacian_Pyramid_Blending_with_mask(restored_img, ff, full_mask[:, :, 0], 15) #increased from 10 to 15
             pp = np.uint8(cv2.resize(np.clip(img, 0 ,255), (width, height)))
+
+            #sharpening the image
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            pp = cv2.filter2D(pp, -1, kernel)
 
             pp, orig_faces, enhanced_faces = enhancer.process(pp, xf, bbox=c, face_enhance=False, possion_blending=True)
             out.write(pp)
@@ -280,7 +286,7 @@ def datagen(frames, mels, full_frames, frames_pil, cox):
     img_batch, mel_batch, frame_batch, coords_batch, ref_batch, full_frame_batch = [], [], [], [], [], []
     base_name = args.face.split('/')[-1]
     refs = []
-    image_size = 256 
+    image_size = 512 #increase size from 256
 
     # original frames
     kp_extractor = KeypointExtractor()
